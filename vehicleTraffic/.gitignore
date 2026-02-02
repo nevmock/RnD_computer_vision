@@ -1,0 +1,9 @@
+node_modules/
+venv/
+dashboard-nodered/
+dataset/
+vehicleTraffic/dataset/
+# atau minimal:
+vehicleTraffic/dataset/malam.mp4
+# atau semua video:
+*.mp4

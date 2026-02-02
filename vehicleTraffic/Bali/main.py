@@ -1,0 +1,199 @@
+import cv2
+import numpy as np
+from ultralytics import YOLO
+from db_writer import start_db_thread, send_to_db
+from datetime import datetime
+from ws import start_websocket_thread, send_frame_to_clients
+
+
+start_db_thread()
+start_websocket_thread()
+
+# =========================
+# POLYGON ZONES (dari kamu)
+# =========================
+ZONE_TOP = np.array([
+    (28,308),
+    (465,273),
+    (658,333),
+    (866,335),
+    (1040,321),
+    (1265,385),
+    (1271,709),
+    (4,713),
+    (6,460),
+    (48,400),
+], dtype=np.int32)
+
+
+
+def inside_poly(cx, cy, poly):
+    # True jika titik di dalam / tepi polygon
+    return cv2.pointPolygonTest(poly, (float(cx), float(cy)), False) >= 0
+
+# =========================
+# MODEL + TRACKER
+# =========================
+model = YOLO("../yolo11n.pt")
+
+# hanya car & motorcycle
+VEH_CLASSES = {2: "car", 3: "motorcycle"}
+CLASSES_FILTER = [2, 3]
+
+# =========================
+# VIDEO
+# =========================
+url = "https://shinobi.bulelengkab.go.id/Amk60KFacq87lQMvTCMHu17u00ONuC/mp4/admin/VmqTvLw4ki80/s.mp4"
+cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+if not cap.isOpened():
+    print("Gagal buka stream. Kalau m3u8 tidak stabil di OpenCV, coba file mp4 lokal dulu.")
+    raise SystemExit
+
+# overlay
+def draw_transparent_polygon(img, poly, color=(0, 255, 255), alpha=0.25):
+    """
+    img   : frame BGR
+    poly  : np.array shape (N,2) int32
+    color : warna fill polygon (BGR)
+    alpha : 0.0 - 1.0 (makin besar makin pekat)
+    """
+    overlay = img.copy()
+    cv2.fillPoly(overlay, [poly], color)
+    cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
+
+
+# =========================
+# COUNTING STATE
+# =========================
+prev_inside = {
+    "top": {},      # track_id -> bool (sebelumnya inside atau tidak)
+}
+counted = {
+    "top": set(),   # track_id yang sudah di-count
+}
+total = {"top": 0}
+def main():
+    while True:
+        ret, frame = cap.read()
+        # h, w = frame.shape[:2]
+        # print("Frame size:", w, "x", h)
+        frame = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_AREA)
+        
+        if not ret:
+            print("Frame tidak terbaca.")
+            break
+        # Track (deteksi + ByteTrack)
+        r = model.track(
+            frame,
+            persist=True,
+            tracker="bytetrack.yaml",
+            conf=0.3,
+            iou=0.6,
+            classes=CLASSES_FILTER,
+            verbose=False
+        )[0]
+
+        draw_transparent_polygon(frame, ZONE_TOP, color=(0, 0, 255), alpha=0.20)
+
+        # Draw polygon zones
+        cv2.polylines(frame, [ZONE_TOP], True, (0,255,255), 2)
+        cv2.putText(frame, "COUNT ZONE", (60, 370), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
+
+
+        boxes = r.boxes
+        if boxes is not None and boxes.id is not None:
+            xyxy = boxes.xyxy.cpu().numpy()
+            cls = boxes.cls.cpu().numpy().astype(int)
+            conf = boxes.conf.cpu().numpy()
+            ids = boxes.id.cpu().numpy().astype(int)
+
+            for (x1,y1,x2,y2), c, cf, tid in zip(xyxy, cls, conf, ids):
+                if c not in VEH_CLASSES:
+                    continue
+
+                x1,y1,x2,y2 = map(int, [x1,y1,x2,y2])
+
+                # titik untuk cek zona: bottom-center lebih stabil untuk kendaraan
+                cx = (x1 + x2) // 2
+                cy = y2
+
+                # ====== cek inside
+                in_top = inside_poly(cx, cy, ZONE_TOP)
+
+                vehicle_type = VEH_CLASSES[c]
+
+                # ====== event "baru masuk TOP"
+                was_top = prev_inside["top"].get(tid, False)
+                if in_top and (not was_top) and (tid not in counted["top"]):
+                    counted["top"].add(tid)
+                    total["top"] += 1
+                    send_to_db(
+                                "Simpang Diponegoro",          
+                                "utara",          
+                                datetime.now(),  
+                                vehicle_type,          
+                                1,               
+                            )
+
+
+                prev_inside["top"][tid] = in_top
+
+                # Draw bbox
+                box_color = (0, 255, 0)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 1)
+
+                # label + ID (text putih, background hijau)
+                label = f"{VEH_CLASSES[c]} {cf:.2f}"
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.6
+                thickness = 2
+
+                # hitung ukuran text
+                (tw, th), baseline = cv2.getTextSize(label, font, font_scale, thickness)
+
+                # posisi label (di atas bbox kalau muat, kalau tidak taruh di dalam bbox)
+                tx = x1
+                ty = y1 - 6
+                if ty - th - baseline < 0:
+                    ty = y1 + th + baseline + 6  # pindah ke bawah/inside
+
+                # background rectangle (filled)
+                bg_tl = (tx, ty - th - baseline)      # top-left
+                bg_br = (tx + tw, ty + baseline)      # bottom-right
+                cv2.rectangle(frame, bg_tl, bg_br, box_color, -1)
+
+                # teks putih di atas background
+                cv2.putText(frame, label, (tx, ty), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+
+                # draw point
+                cv2.circle(frame, (cx, cy), 3, (0, 0, 255), -1)
+
+
+        # show totals (background merah, text putih)
+        text = f"COUNT: {total['top']}"
+        pos = (30, 120)  # (x, y) baseline text
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1.0
+        thickness = 2
+
+        (tw, th), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+
+        x, y = pos
+        bg_tl = (x - 8, y - th - baseline - 8)
+        bg_br = (x + tw + 8, y + baseline + 8)
+
+        # kotak merah (filled)
+        cv2.rectangle(frame, bg_tl, bg_br, (0, 0, 255), -1)
+
+        # teks putih
+        cv2.putText(frame, text, (x, y), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+
+        send_frame_to_clients(frame)
+
+        # cv2.imshow("Count Enter Zone (ByteTrack)", frame)
+        # if cv2.waitKey(1) & 0xFF == 27:
+        #     break
+
+if __name__ == "__main__":
+    main()
