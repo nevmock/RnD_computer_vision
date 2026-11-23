@@ -103,8 +103,8 @@ def make_handler(state: MockCoreState):
             return self.rfile.read(length) if length else b""
 
         def do_GET(self):
-            path = urlparse(self.path).path
-            if path == "/mock/state":
+            path = urlparse(self.path).path.rstrip("/") or "/"
+            if path in ("/", "/mock/state"):      # untuk dibuka di browser, tanpa API key
                 return self._send(200, state.summary())
             if not self._authorized():
                 return
@@ -113,7 +113,7 @@ def make_handler(state: MockCoreState):
             self._send(404, message="Route not found")
 
         def do_POST(self):
-            path = urlparse(self.path).path
+            path = urlparse(self.path).path.rstrip("/")
             if not self._authorized():
                 return
             if path == "/internal/v1/ingest/traffic-counts":
@@ -213,7 +213,8 @@ def main():
     args = parser.parse_args()
     codes = args.cctv or ["DEV-CIKUTRA", "DEV-DIPONEGORO"]
     server, _ = serve(args.port, args.api_key, codes, args.upload_dir, args.host)
-    print(f"[mock-core] http://{args.host}:{args.port}  api-key={args.api_key}  cctv={codes}", flush=True)
+    print(f"[mock-core] jalan di http://{args.host}:{args.port}  api-key={args.api_key}  cctv={codes}", flush=True)
+    print(f"[mock-core] lihat data masuk di browser: http://localhost:{args.port}/mock/state", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

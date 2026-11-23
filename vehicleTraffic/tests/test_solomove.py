@@ -174,6 +174,13 @@ class TestCoreClient(MockCoreMixin, unittest.TestCase):
         cctvs = CoreClient(self.url, "k").get_cctvs()
         self.assertEqual(cctvs[0]["code"], "DEV-1")
 
+    def test_state_page_open_without_key(self):
+        import requests
+        for path in ("/", "/mock/state", "/mock/state/"):
+            resp = requests.get(self.url + path, timeout=5)
+            self.assertEqual(resp.status_code, 200, path)
+            self.assertIn("traffic", resp.json()["data"])
+
     def test_bad_key_is_retryable(self):
         with self.assertRaises(CoreError) as ctx:
             CoreClient(self.url, "salah").get_cctvs()
