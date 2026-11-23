@@ -1,5 +1,6 @@
 node_modules/
 venv/
+.venv
 dashboard-nodered/
 dataset/
 vehicleTraffic/dataset/
