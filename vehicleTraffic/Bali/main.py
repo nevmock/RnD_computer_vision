@@ -67,9 +67,9 @@ CLASSES_FILTER = COCO_CLASSES_FILTER
 # =========================
 # url = "https://shinobi.bulelengkab.go.id/Amk60KFacq87lQMvTCMHu17u00ONuC/mp4/admin/VmqTvLw4ki80/s.mp4"  # asli Bali (Simpang Diponegoro) - server sedang down
 # url = "https://cctv.atcs-dishubkbb.id/memfs/8c6a68c4-5fa5-44b6-8be5-72860ba26ba8.m3u8"  # mati (balas HTML, bukan video)
-# SEMENTARA: pakai stream Cikutra untuk tes. ZONE_TOP digambar untuk kamera Bali, jadi hitungan tidak akurat.
+# SEMENTARA: pakai stream ATCS Bandung Pahlawan untuk tes (Cikutra sudah mati). ZONE_TOP digambar untuk kamera Bali, jadi hitungan tidak akurat.
 # Bisa diganti tanpa edit kode: VIDEO_SOURCE=../dataset/malam.mp4 python main.py
-url = os.environ.get("VIDEO_SOURCE", "https://atcs-dishub.bandung.go.id:1990/Cikutra/index.m3u8")
+url = os.environ.get("VIDEO_SOURCE", "https://atcs-dishub.bandung.go.id:1990/Pahlawan/index.m3u8")
 cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
 if not cap.isOpened():
     print("Gagal buka stream:", url)

@@ -19,7 +19,7 @@ disimpan di antrean SQLite lokal (`solomove_outbox.sqlite3`) dan dikirim ulang o
 |---|---|---|
 | `SOLOMOVE_CORE_URL` | ya | `http://localhost:3001` |
 | `SOLOMOVE_API_KEY` | ya | sama dengan `INTERNAL_API_KEY` di Core |
-| `SOLOMOVE_CCTV_CODE` | tidak* | `SKA-001` (*default dari `main.py`, mis. `DEV-CIKUTRA`) |
+| `SOLOMOVE_CCTV_CODE` | tidak* | `SKA-001` (*default dari `main.py`, mis. `DEV-PAHLAWAN`) |
 | `SOLOMOVE_BUCKET_MINUTES` | tidak | `5` |
 | `SOLOMOVE_FLUSH_INTERVAL_SEC` | tidak | `30` |
 | `SOLOMOVE_HEARTBEAT_INTERVAL_SEC` | tidak | `60` |
@@ -32,7 +32,7 @@ Jika `SOLOMOVE_CORE_URL` / `SOLOMOVE_API_KEY` kosong, `main.py` tetap jalan sepe
 
 ```bash
 cd vehicleTraffic
-python tools/mock_core.py --port 3001 --api-key dev-key --cctv DEV-CIKUTRA
+python tools/mock_core.py --port 3001 --api-key dev-key --cctv DEV-PAHLAWAN
 
 # terminal lain
 cd vehicleTraffic/Bandung
@@ -45,7 +45,7 @@ Lihat data yang masuk: http://localhost:3001/mock/state · foto bukti: `vehicleT
 ```python
 from solomove import TrafficReporter, coco_to_vehicle_type
 
-reporter = TrafficReporter.from_env(cctv_code="DEV-CIKUTRA").start()
+reporter = TrafficReporter.from_env(cctv_code="DEV-PAHLAWAN").start()
 reporter.record_coco(class_id)                                   # kendaraan masuk zona hitung
 reporter.report_violation("RODA_DUA", jpg_bytes,                 # lawan arah
                           description="Melaju berlawanan arah di jalur kiri", confidence=0.87)

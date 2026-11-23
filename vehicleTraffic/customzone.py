@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_URL = "https://atcs-dishub.bandung.go.id:1990/Cikutra/index.m3u8"
+DEFAULT_URL = "https://atcs-dishub.bandung.go.id:1990/Pahlawan/index.m3u8"  # Cikutra sudah mati
 FRAME_SIZE = (1280, 720)  # harus sama dengan resize di main.py
 
 # Zona yang dipakai tiap lokasi

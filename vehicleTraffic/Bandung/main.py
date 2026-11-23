@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from solomove import TrafficReporter, COCO_CLASSES_FILTER, coco_to_vehicle_type
 
-reporter = TrafficReporter.from_env(cctv_code="DEV-CIKUTRA").start()
+reporter = TrafficReporter.from_env(cctv_code="DEV-PAHLAWAN").start()
 
 
 start_db_thread()
@@ -100,7 +100,8 @@ CLASSES_FILTER = COCO_CLASSES_FILTER
 # =========================
 # url = "https://cctv.atcs-dishubkbb.id/memfs/8c6a68c4-5fa5-44b6-8be5-72860ba26ba8.m3u8"  # mati (balas HTML, bukan video)
 # Bisa diganti tanpa edit kode: VIDEO_SOURCE=../dataset/malam.mp4 python main.py
-url = os.environ.get("VIDEO_SOURCE", "https://atcs-dishub.bandung.go.id:1990/Cikutra/index.m3u8")
+# Cikutra (https://atcs-dishub.bandung.go.id:1990/Cikutra/index.m3u8) mati sejak 23 Nov 2026 → diganti Pahlawan
+url = os.environ.get("VIDEO_SOURCE", "https://atcs-dishub.bandung.go.id:1990/Pahlawan/index.m3u8")
 
 # BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # VIDEO_SOURCE = os.path.join(BASE_DIR, "sample.mp4")
@@ -300,7 +301,7 @@ def main():
                     counted["top"].add(tid)
                     total["top"] += 1
                     send_to_db(
-                                "Simpang Cikutra",          
+                                "Pahlawan",          
                                 "utara",          
                                 datetime.now(),  
                                 vehicle_type,          

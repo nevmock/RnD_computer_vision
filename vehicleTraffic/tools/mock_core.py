@@ -2,9 +2,9 @@
 
 Menjalankan endpoint Internal Ingest API (docs/03 §9) di memori + validasi payload.
 
-    python tools/mock_core.py --port 3001 --api-key dev-key --cctv DEV-CIKUTRA
+    python tools/mock_core.py --port 3001 --api-key dev-key --cctv DEV-PAHLAWAN
     # lalu di terminal lain (folder Bandung):
-    SOLOMOVE_CORE_URL=http://localhost:3001 SOLOMOVE_API_KEY=dev-key SOLOMOVE_CCTV_CODE=DEV-CIKUTRA python main.py
+    SOLOMOVE_CORE_URL=http://localhost:3001 SOLOMOVE_API_KEY=dev-key SOLOMOVE_CCTV_CODE=DEV-PAHLAWAN python main.py
 
 Cek isi: http://localhost:3001/mock/state
 """
@@ -211,7 +211,7 @@ def main():
     parser.add_argument("--cctv", action="append", default=None, help="Kode CCTV yang dikenal (boleh berulang)")
     parser.add_argument("--upload-dir", default="mock_core_uploads")
     args = parser.parse_args()
-    codes = args.cctv or ["DEV-CIKUTRA", "DEV-DIPONEGORO"]
+    codes = args.cctv or ["DEV-PAHLAWAN", "DEV-DIPONEGORO"]
     server, _ = serve(args.port, args.api_key, codes, args.upload_dir, args.host)
     print(f"[mock-core] jalan di http://{args.host}:{args.port}  api-key={args.api_key}  cctv={codes}", flush=True)
     print(f"[mock-core] lihat data masuk di browser: http://localhost:{args.port}/mock/state", flush=True)

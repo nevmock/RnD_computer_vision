@@ -1,6 +1,6 @@
 """TrafficReporter: satu-satunya objek yang dipanggil dari main.py.
 
-    reporter = TrafficReporter.from_env(cctv_code="DEV-CIKUTRA")   # NullReporter jika env belum diisi
+    reporter = TrafficReporter.from_env(cctv_code="DEV-PAHLAWAN")   # NullReporter jika env belum diisi
     reporter.start()
     ...
     reporter.record_coco(class_id)                       # tiap kendaraan terhitung
