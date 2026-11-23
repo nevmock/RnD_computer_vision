@@ -5,6 +5,13 @@ from db_writer import start_db_thread, send_to_db
 from datetime import datetime
 from ws import start_websocket_thread, send_frame_to_clients
 import os
+import sys
+
+# Integrasi Core API SoloMove (aktif jika env SOLOMOVE_CORE_URL & SOLOMOVE_API_KEY diisi)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from solomove import TrafficReporter, COCO_CLASSES_FILTER, coco_to_vehicle_type
+
+reporter = TrafficReporter.from_env(cctv_code="DEV-CIKUTRA").start()
 
 
 start_db_thread()
@@ -84,9 +91,9 @@ def inside_poly(cx, cy, poly):
 # =========================
 model = YOLO("../yolo11n.pt")
 
-# hanya car & motorcycle
-VEH_CLASSES = {2: "car", 3: "motorcycle"}
-CLASSES_FILTER = [2, 3]
+# car, motorcycle, bus, truck (mapping ke VehicleType SoloMove ada di solomove/vehicle_types.py)
+VEH_CLASSES = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+CLASSES_FILTER = COCO_CLASSES_FILTER
 
 # =========================
 # VIDEO
@@ -154,6 +161,7 @@ def main():
             break
 
         frame = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_AREA)
+        clean_frame = frame.copy()  # untuk foto bukti pelanggaran (tanpa overlay)
 
         # h, w = frame.shape[:2]
         h, w = frame.shape[:2]
@@ -258,6 +266,20 @@ def main():
                         contra_ids.add(tid)
                         contra_total += 1
 
+                        # Bukti pelanggaran → Core SoloMove (dikirim di thread latar belakang)
+                        vtype = coco_to_vehicle_type(c)
+                        if vtype:
+                            evidence = clean_frame.copy()
+                            cv2.rectangle(evidence, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                            ok, jpg = cv2.imencode(".jpg", evidence, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                            if ok:
+                                lane = "kiri" if current_zone == "left" else "kanan"
+                                reporter.report_violation(
+                                    vtype, jpg.tobytes(),
+                                    description=f"Melaju berlawanan arah di jalur {lane}",
+                                    confidence=float(cf),
+                                )
+
                 # reset kalau keluar zona
                 if not current_zone and tid in zone_entry_position:
                     del zone_entry_position[tid]
@@ -281,6 +303,7 @@ def main():
                                 vehicle_type,          
                                 1,               
                             )
+                    reporter.record_coco(c)
 
 
                 prev_inside["top"][tid] = in_top
@@ -362,4 +385,7 @@ def main():
         #     break
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        reporter.stop()  # kirim sisa data sebelum keluar

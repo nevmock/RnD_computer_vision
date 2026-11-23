@@ -4,6 +4,14 @@ from ultralytics import YOLO
 from db_writer import start_db_thread, send_to_db
 from datetime import datetime
 from ws import start_websocket_thread, send_frame_to_clients
+import os
+import sys
+
+# Integrasi Core API SoloMove (aktif jika env SOLOMOVE_CORE_URL & SOLOMOVE_API_KEY diisi)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from solomove import TrafficReporter, COCO_CLASSES_FILTER
+
+reporter = TrafficReporter.from_env(cctv_code="DEV-DIPONEGORO").start()
 
 
 start_db_thread()
@@ -50,9 +58,9 @@ def inside_poly(cx, cy, poly):
 # =========================
 model = YOLO("../yolo11n.pt")
 
-# hanya car & motorcycle
-VEH_CLASSES = {2: "car", 3: "motorcycle"}
-CLASSES_FILTER = [2, 3]
+# car, motorcycle, bus, truck (mapping ke VehicleType SoloMove ada di solomove/vehicle_types.py)
+VEH_CLASSES = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+CLASSES_FILTER = COCO_CLASSES_FILTER
 
 # =========================
 # VIDEO
@@ -92,13 +100,13 @@ total = {"top": 0}
 def main():
     while True:
         ret, frame = cap.read()
-        # h, w = frame.shape[:2]
-        # print("Frame size:", w, "x", h)
-        frame = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_AREA)
-        
+        # cek ret dulu: saat stream putus frame = None dan cv2.resize akan crash
         if not ret:
             print("Frame tidak terbaca.")
             break
+        # h, w = frame.shape[:2]
+        # print("Frame size:", w, "x", h)
+        frame = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_AREA)
         # Track (deteksi + ByteTrack)
         r = model.track(
             frame,
@@ -151,6 +159,7 @@ def main():
                                 vehicle_type,          
                                 1,               
                             )
+                    reporter.record_coco(c)
 
 
                 prev_inside["top"][tid] = in_top
@@ -213,4 +222,7 @@ def main():
         #     break
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        reporter.stop()  # kirim sisa data sebelum keluar

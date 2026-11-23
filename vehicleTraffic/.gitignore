@@ -8,3 +8,7 @@ vehicleTraffic/dataset/
 vehicleTraffic/dataset/malam.mp4
 # atau semua video:
 *.mp4
+
+# SoloMove reporter
+solomove_outbox.sqlite3*
+mock_core_uploads/
