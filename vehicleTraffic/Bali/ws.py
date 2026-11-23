@@ -8,7 +8,7 @@ import time
 # ==========================================================
 # KONFIGURASI WEBSOCKET
 # ==========================================================
-WS_HOST = '192.168.1.103'
+WS_HOST = '0.0.0.0'
 WS_PORT = 8008
 
 loop_ws = None
@@ -92,7 +92,7 @@ def broadcast_mpeg(data: bytes):
 # KONFIGURASI FFMPEG
 # ==========================================================
 FFMPEG_CMD = [
-    'ffmpeg',
+    '/opt/homebrew/bin/ffmpeg',
     '-f', 'rawvideo',
     '-pix_fmt', 'bgr24',
     '-s', '1280x720',

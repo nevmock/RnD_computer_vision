@@ -4,6 +4,7 @@ from ultralytics import YOLO
 from db_writer import start_db_thread, send_to_db
 from datetime import datetime
 from ws import start_websocket_thread, send_frame_to_clients
+import os
 
 
 start_db_thread()
@@ -12,6 +13,26 @@ start_websocket_thread()
 # =========================
 # POLYGON ZONES (dari kamu)
 # =========================
+ZONE_LEFT = np.array([
+    (583, 162),
+    (712, 164),
+    (612, 524),
+    (522, 715),
+    (13, 708),
+    (12, 547),
+    (584, 164),
+], dtype=np.int32)
+
+ZONE_RIGHT = np.array([
+    (795, 165),
+    (918, 162),
+    (1276, 394),
+    (1273, 700),
+    (1016, 699),
+    (925, 510),
+    (792, 161),
+], dtype=np.int32)
+
 ZONE_TOP = np.array([
     (3,329),
     (140,233),
@@ -29,6 +50,30 @@ ZONE_TOP = np.array([
 ], dtype=np.int32)
 
 
+# =========================
+# ZONA CUSTOM: kalau ada zones.json (dibuat dengan customzone.py),
+# zona di atas diganti dengan isi file itu.
+# =========================
+import json as _json, os as _os
+_ZONES_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "zones.json")
+if _os.path.exists(_ZONES_FILE):
+    with open(_ZONES_FILE, encoding="utf-8") as _f:
+        _z = _json.load(_f)
+    if len(_z.get("top", [])) >= 3:
+        ZONE_TOP = np.array(_z["top"], dtype=np.int32)
+    if len(_z.get("left", [])) >= 3:
+        ZONE_LEFT = np.array(_z["left"], dtype=np.int32)
+    if len(_z.get("right", [])) >= 3:
+        ZONE_RIGHT = np.array(_z["right"], dtype=np.int32)
+    print("Zona dimuat dari", _ZONES_FILE)
+
+
+direction_history = {}
+MOVEMENT_THRESHOLD = 5
+MIN_FRAMES = 6
+
+zone_entry_position = {}
+MIN_DISPLACEMENT = 25   # pixel minimum agar dianggap benar-benar bergerak
 
 def inside_poly(cx, cy, poly):
     # True jika titik di dalam / tepi polygon
@@ -46,8 +91,16 @@ CLASSES_FILTER = [2, 3]
 # =========================
 # VIDEO
 # =========================
+# url = "https://cctv.atcs-dishubkbb.id/memfs/8c6a68c4-5fa5-44b6-8be5-72860ba26ba8.m3u8"  # mati (balas HTML, bukan video)
 url = "https://atcs-dishub.bandung.go.id:1990/Cikutra/index.m3u8"
+
+# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# VIDEO_SOURCE = os.path.join(BASE_DIR, "sample.mp4")
+
 cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+# cap = cv2.VideoCapture(VIDEO_SOURCE)
+print("Video opened:", cap.isOpened())
+
 if not cap.isOpened():
     print("Gagal buka stream. Kalau m3u8 tidak stabil di OpenCV, coba file mp4 lokal dulu.")
     raise SystemExit
@@ -75,16 +128,55 @@ counted = {
     "top": set(),   # track_id yang sudah di-count
 }
 total = {"top": 0}
+
+# =========================
+# CONTRA FLOW STATE
+# =========================
+prev_position = {}
+contra_ids = set()
+contra_total = 0
+
 def main():
+    global contra_total
+
+    def mouse_callback(event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            print(f"({x}, {y}),")
+
+    cv2.namedWindow("debug")
+    cv2.setMouseCallback("debug", mouse_callback)
+
     while True:
         ret, frame = cap.read()
-        # h, w = frame.shape[:2]
-        # print("Frame size:", w, "x", h)
-        frame = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_AREA)
-        
+
         if not ret:
             print("Frame tidak terbaca.")
             break
+
+        frame = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_AREA)
+
+        # h, w = frame.shape[:2]
+        h, w = frame.shape[:2]
+
+        LEFT_LANE_MIN_X = 0
+        LEFT_LANE_MAX_X = 640
+
+        RIGHT_LANE_MIN_X = 640
+        RIGHT_LANE_MAX_X = 1280
+
+        LEFT_LINE_Y = 360
+        RIGHT_LINE_Y = 360
+
+        # cv2.line(frame, (LEFT_LANE_MIN_X, LEFT_LINE_Y),
+        #          (LEFT_LANE_MAX_X, LEFT_LINE_Y), (255, 0, 0), 2)
+        #
+        # cv2.line(frame, (RIGHT_LANE_MIN_X, RIGHT_LINE_Y),
+        #          (RIGHT_LANE_MAX_X, RIGHT_LINE_Y), (255, 0, 0), 2)
+
+
+        # if not ret:
+        #     print("Frame tidak terbaca.")
+        #     break
         # Track (deteksi + ByteTrack)
         r = model.track(
             frame,
@@ -96,10 +188,15 @@ def main():
             verbose=False
         )[0]
 
-        draw_transparent_polygon(frame, ZONE_TOP, color=(0, 0, 255), alpha=0.20)
+        # draw_transparent_polygon(frame, ZONE_TOP, color=(0, 0, 255), alpha=0.20)
+        draw_transparent_polygon(frame, ZONE_LEFT, color=(255, 0, 0), alpha=0.08)
+        draw_transparent_polygon(frame, ZONE_RIGHT, color=(0, 255, 0), alpha=0.08)
+        #
+        cv2.polylines(frame, [ZONE_LEFT], True, (255,0,0), 2)
+        cv2.polylines(frame, [ZONE_RIGHT], True, (0,255,0), 2)
 
         # Draw polygon zones
-        cv2.polylines(frame, [ZONE_TOP], True, (0,255,255), 2)
+        # cv2.polylines(frame, [ZONE_TOP], True, (0,255,255), 2)
         cv2.putText(frame, "COUNT ZONE", (60, 370), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
 
 
@@ -119,6 +216,53 @@ def main():
                 # titik untuk cek zona: bottom-center lebih stabil untuk kendaraan
                 cx = (x1 + x2) // 2
                 cy = y2
+
+                prev_cy = prev_position.get(tid)
+
+                in_left = inside_poly(cx, cy, ZONE_LEFT)
+                in_right = inside_poly(cx, cy, ZONE_RIGHT)
+
+                current_zone = None
+                if in_left:
+                    current_zone = "left"
+                elif in_right:
+                    current_zone = "right"
+
+                # =========================
+                # Saat pertama kali masuk zona
+                # =========================
+                if current_zone and tid not in zone_entry_position:
+                    zone_entry_position[tid] = cy
+
+                # =========================
+                # Jika sudah punya entry point
+                # =========================
+                if current_zone and tid in zone_entry_position:
+
+                    entry_cy = zone_entry_position[tid]
+                    displacement = cy - entry_cy
+
+                    wrong_direction = False
+
+                    # JALUR KIRI → harus naik (cy makin kecil)
+                    if current_zone == "left":
+                        if displacement > MIN_DISPLACEMENT:
+                            wrong_direction = True
+
+                    # JALUR KANAN → harus turun (cy makin besar)
+                    elif current_zone == "right":
+                        if displacement < -MIN_DISPLACEMENT:
+                            wrong_direction = True
+
+                    if wrong_direction and tid not in contra_ids:
+                        contra_ids.add(tid)
+                        contra_total += 1
+
+                # reset kalau keluar zona
+                if not current_zone and tid in zone_entry_position:
+                    del zone_entry_position[tid]
+
+                prev_position[tid] = cy
 
                 # ====== cek inside
                 in_top = inside_poly(cx, cy, ZONE_TOP)
@@ -142,7 +286,11 @@ def main():
                 prev_inside["top"][tid] = in_top
 
                 # Draw bbox
-                box_color = (0, 255, 0)
+                # box_color = (0, 255, 0)
+                if tid in contra_ids:
+                    box_color = (0, 0, 255)
+                else:
+                    box_color = (0, 255, 0)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 1)
 
                 # label + ID (text putih, background hijau)
@@ -192,7 +340,22 @@ def main():
         # teks putih
         cv2.putText(frame, text, (x, y), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
+        contra_text = f"CONTRA: {contra_total}"
+        pos2 = (30, 170)
+
+        (tw2, th2), baseline2 = cv2.getTextSize(contra_text, font, font_scale, thickness)
+
+        bg_tl2 = (pos2[0] - 8, pos2[1] - th2 - baseline2 - 8)
+        bg_br2 = (pos2[0] + tw2 + 8, pos2[1] + baseline2 + 8)
+
+        cv2.rectangle(frame, bg_tl2, bg_br2, (0, 0, 255), -1)
+        cv2.putText(frame, contra_text, pos2, font, font_scale,
+                    (255,255,255), thickness, cv2.LINE_AA)
+
         send_frame_to_clients(frame)
+        # cv2.imshow("debug", frame)
+        # if cv2.waitKey(1) & 0xFF == 27:
+        #     break
 
         # cv2.imshow("Count Enter Zone (ByteTrack)", frame)
         # if cv2.waitKey(1) & 0xFF == 27:

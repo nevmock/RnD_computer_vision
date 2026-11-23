@@ -27,6 +27,20 @@ ZONE_TOP = np.array([
 
 
 
+# =========================
+# ZONA CUSTOM: kalau ada zones.json (dibuat dengan customzone.py),
+# zona di atas diganti dengan isi file itu.
+# =========================
+import json as _json, os as _os
+_ZONES_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "zones.json")
+if _os.path.exists(_ZONES_FILE):
+    with open(_ZONES_FILE, encoding="utf-8") as _f:
+        _z = _json.load(_f)
+    if len(_z.get("top", [])) >= 3:
+        ZONE_TOP = np.array(_z["top"], dtype=np.int32)
+    print("Zona dimuat dari", _ZONES_FILE)
+
+
 def inside_poly(cx, cy, poly):
     # True jika titik di dalam / tepi polygon
     return cv2.pointPolygonTest(poly, (float(cx), float(cy)), False) >= 0
@@ -43,7 +57,10 @@ CLASSES_FILTER = [2, 3]
 # =========================
 # VIDEO
 # =========================
-url = "https://shinobi.bulelengkab.go.id/Amk60KFacq87lQMvTCMHu17u00ONuC/mp4/admin/VmqTvLw4ki80/s.mp4"
+# url = "https://shinobi.bulelengkab.go.id/Amk60KFacq87lQMvTCMHu17u00ONuC/mp4/admin/VmqTvLw4ki80/s.mp4"  # asli Bali (Simpang Diponegoro) - server sedang down
+# url = "https://cctv.atcs-dishubkbb.id/memfs/8c6a68c4-5fa5-44b6-8be5-72860ba26ba8.m3u8"  # mati (balas HTML, bukan video)
+# SEMENTARA: pakai stream Cikutra untuk tes. ZONE_TOP digambar untuk kamera Bali, jadi hitungan tidak akurat.
+url = "https://atcs-dishub.bandung.go.id:1990/Cikutra/index.m3u8"
 cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
 if not cap.isOpened():
     print("Gagal buka stream. Kalau m3u8 tidak stabil di OpenCV, coba file mp4 lokal dulu.")

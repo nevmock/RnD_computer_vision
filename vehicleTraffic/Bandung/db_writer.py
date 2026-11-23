@@ -11,7 +11,7 @@ db_queue = Queue(maxsize=DB_QUEUE_MAX)
 DB_CFG = dict(
     host="localhost",
     database="vehicle_traffic",
-    user="postgres",
+    user="traffic_user",
     password="123",
     port="5432"
 )
