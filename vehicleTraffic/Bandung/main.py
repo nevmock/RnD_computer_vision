@@ -77,14 +77,19 @@ if _os.path.exists(_ZONES_FILE):
 
 # =========================
 # LAWAN ARAH (solomove/contraflow.py)
-# Tiap lajur punya arah seharusnya. Default: LEFT = naik, RIGHT = turun.
-# Arah miring diatur di customzone.py (tombol D) → disimpan sebagai left_direction / right_direction.
+# Lajur + panah arah digambar di customzone.py (N = lajur baru, D = panah) → "lanes" di zones.json.
+# Hanya lajur yang ada di "lanes" yang dicek; "lanes": [] = lawan arah nonaktif.
+# File lama tanpa "lanes": zona left (harus naik) & right (harus turun).
 # Ambang (jarak minimum, sudut, jumlah frame) bisa di-override lewat key "contraflow" di zones.json.
 # =========================
 _lane_cfg = {"left": ZONE_LEFT.tolist(), "right": ZONE_RIGHT.tolist()}
 _lane_cfg.update({k: _z[k] for k in ("left_direction", "right_direction", "lanes", "contraflow") if k in _z})
 contraflow = ContraflowDetector.from_zones(_lane_cfg)
-LANE_COLORS = {"left": (255, 0, 0), "right": (0, 255, 0)}
+# BGR, urutan sama dengan customzone.py (lajur-1 biru, lajur-2 hijau, ...)
+LANE_COLORS = [(255, 0, 0), (0, 255, 0), (0, 165, 255), (255, 0, 255),
+               (255, 255, 0), (180, 105, 255), (0, 128, 255), (128, 0, 128)]
+if not contraflow.lanes:
+    print("Lawan arah: nonaktif (tidak ada lajur di zones.json)")
 for _lane in contraflow.lanes:
     print(f"Lajur {_lane.name}: arah seharusnya ({_lane.direction[0]:+.2f}, {_lane.direction[1]:+.2f})")
 
@@ -145,6 +150,10 @@ def draw_lane(img, lane, color):
     tail = (int(cx - dx * 40), int(cy - dy * 40))
     head = (int(cx + dx * 40), int(cy + dy * 40))
     cv2.arrowedLine(img, tail, head, color, 3, tipLength=0.35)
+    name = lane.label or lane.name
+    (tw, _), _ = cv2.getTextSize(name, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+    y = int(max(p[1] for p in lane.polygon)) + 18   # nama di bawah zona
+    cv2.putText(img, name, (int(cx) - tw // 2, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2, cv2.LINE_AA)
 
 
 # =========================
@@ -215,8 +224,8 @@ def main():
         )[0]
 
         # draw_transparent_polygon(frame, ZONE_TOP, color=(0, 0, 255), alpha=0.20)
-        for lane in contraflow.lanes:
-            draw_lane(frame, lane, LANE_COLORS.get(lane.name, (0, 165, 255)))
+        for i, lane in enumerate(contraflow.lanes):
+            draw_lane(frame, lane, LANE_COLORS[i % len(LANE_COLORS)])
 
         # Draw polygon zones
         # cv2.polylines(frame, [ZONE_TOP], True, (0,255,255), 2)

@@ -81,14 +81,23 @@ if frame_idx % 30 == 0:
 Format zona yang diterima:
 
 ```jsonc
-// format customzone.py (lama, tetap jalan)
-{"left": [[x, y], ...], "right": [[x, y], ...],
- "left_direction": [[x1, y1], [x2, y2]],      // opsional: panah ekor → kepala (tombol D)
- "contraflow": {"min_distance_px": 60}}        // opsional: override ambang
-// format aiConfig Core (banyak lajur)
-{"lanes": [{"name": "kiri", "zone": [[x, y], ...], "direction": "up" | [dx, dy] | [[x1, y1], [x2, y2]]}]}
+// format customzone.py sekarang = format aiConfig Core (banyak lajur)
+{"top": [[x, y], ...],
+ "lanes": [{"name": "atas-keluar", "zone": [[x, y], ...],
+            "direction": [[x1, y1], [x2, y2]]}],   // panah ekor → kepala; boleh juga "up" | [dx, dy]
+ "contraflow": {"min_distance_px": 60}}           // opsional: override ambang
+// format lama (tetap jalan): {"left": [...], "right": [...], "left_direction": [[x1, y1], [x2, y2]]}
 ```
-Tanpa `*_direction`: `left` = naik, `right` = turun. Jika `lanes` diisi, `left`/`right` diabaikan.
+- Jika key `lanes` ada (walau `[]`), hanya `lanes` yang dipakai; `"lanes": []` = lawan arah nonaktif.
+- Tiap lajur di `lanes` **wajib** punya `direction` (tidak ada arah default).
+- Format lama: tanpa `*_direction`, `left` = naik, `right` = turun.
+
+### Menggambar lajur (`customzone.py`)
+
+`N` lajur baru (ketik nama, Enter) → klik titik polygon → `D` lalu klik ekor dan kepala panah
+(searah lalu lintas yang benar) → `S`. `2..9` pilih lajur, `E` ganti nama, `H` hapus (tekan 2x),
+`X` hapus panah, `I` sembunyikan bantuan. Editor menolak menyimpan lajur yang belum punya panah.
+File lama (`left`/`right`) dibuka sebagai lajur `kiri`/`kanan`.
 
 ## Tes
 

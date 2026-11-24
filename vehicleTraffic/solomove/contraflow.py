@@ -104,16 +104,19 @@ def lanes_from_zones(zones: dict) -> List[Lane]:
     Format lama (customzone.py):
         {"left": [[x, y], ...], "right": [...], "left_direction": [[x1, y1], [x2, y2]] (opsional)}
         Tanpa *_direction: left = naik, right = turun.
-    Jika "lanes" ada isinya, hanya "lanes" yang dipakai (left/right diabaikan).
+    Jika key "lanes" ada (walau kosong), hanya "lanes" yang dipakai (left/right diabaikan),
+    dan tiap lajur WAJIB punya "direction" (tidak ada arah default supaya tidak salah diam-diam).
     """
     lanes: List[Lane] = []
-    for i, item in enumerate(zones.get("lanes") or []):
-        poly = tuple((float(x), float(y)) for x, y in item.get("zone", []))
-        if len(poly) < 3:
-            continue
-        name = str(item.get("name") or f"lajur-{i + 1}")
-        lanes.append(Lane(name, poly, parse_direction(item.get("direction", "up")), name))
-    if lanes:
+    if "lanes" in zones:
+        for i, item in enumerate(zones.get("lanes") or []):
+            poly = tuple((float(x), float(y)) for x, y in item.get("zone", []))
+            if len(poly) < 3:
+                continue
+            name = str(item.get("name") or f"lajur-{i + 1}")
+            if item.get("direction") is None:
+                raise ValueError(f"Lajur '{name}' belum punya 'direction' (gambar panah dengan tombol D di customzone.py)")
+            lanes.append(Lane(name, poly, parse_direction(item["direction"]), name))
         return lanes
     for key, (default_dir, label) in LEGACY_LANES.items():
         poly = tuple((float(x), float(y)) for x, y in zones.get(key, []) or [])

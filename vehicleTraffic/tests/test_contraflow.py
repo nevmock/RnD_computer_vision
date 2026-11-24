@@ -53,6 +53,13 @@ class TestParsing(unittest.TestCase):
         self.assertEqual([l.name for l in lanes], ["utara"])
         self.assertEqual(lanes[0].direction, (1.0, 0.0))
 
+    def test_empty_lanes_key_disables_legacy(self):
+        self.assertEqual(lanes_from_zones({"left": LEFT, "right": RIGHT, "lanes": []}), [])
+
+    def test_lane_without_direction_raises(self):
+        with self.assertRaises(ValueError):
+            lanes_from_zones({"lanes": [{"name": "atas-keluar", "zone": LEFT}]})
+
     def test_zone_with_less_than_3_points_ignored(self):
         self.assertEqual(lanes_from_zones({"left": [[0, 0], [1, 1]], "right": []}), [])
 
