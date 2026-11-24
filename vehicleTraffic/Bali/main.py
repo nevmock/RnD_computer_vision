@@ -4,6 +4,14 @@ from ultralytics import YOLO
 from db_writer import start_db_thread, send_to_db
 from datetime import datetime
 from ws import start_websocket_thread, send_frame_to_clients
+import os
+import sys
+
+# Integrasi Core API SoloMove (aktif jika env SOLOMOVE_CORE_URL & SOLOMOVE_API_KEY diisi)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from solomove import TrafficReporter, COCO_CLASSES_FILTER
+
+reporter = TrafficReporter.from_env(cctv_code="DEV-DIPONEGORO").start()
 
 
 start_db_thread()
@@ -50,20 +58,23 @@ def inside_poly(cx, cy, poly):
 # =========================
 model = YOLO("../yolo11n.pt")
 
-# hanya car & motorcycle
-VEH_CLASSES = {2: "car", 3: "motorcycle"}
-CLASSES_FILTER = [2, 3]
+# car, motorcycle, bus, truck (mapping ke VehicleType SoloMove ada di solomove/vehicle_types.py)
+VEH_CLASSES = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+CLASSES_FILTER = COCO_CLASSES_FILTER
 
 # =========================
 # VIDEO
 # =========================
 # url = "https://shinobi.bulelengkab.go.id/Amk60KFacq87lQMvTCMHu17u00ONuC/mp4/admin/VmqTvLw4ki80/s.mp4"  # asli Bali (Simpang Diponegoro) - server sedang down
 # url = "https://cctv.atcs-dishubkbb.id/memfs/8c6a68c4-5fa5-44b6-8be5-72860ba26ba8.m3u8"  # mati (balas HTML, bukan video)
-# SEMENTARA: pakai stream Cikutra untuk tes. ZONE_TOP digambar untuk kamera Bali, jadi hitungan tidak akurat.
-url = "https://atcs-dishub.bandung.go.id:1990/Cikutra/index.m3u8"
+# SEMENTARA: pakai stream ATCS Bandung Pahlawan untuk tes (Cikutra sudah mati). ZONE_TOP digambar untuk kamera Bali, jadi hitungan tidak akurat.
+# Bisa diganti tanpa edit kode: VIDEO_SOURCE=../dataset/malam.mp4 python main.py
+url = os.environ.get("VIDEO_SOURCE", "https://atcs-dishub.bandung.go.id:1990/Pahlawan/index.m3u8")
 cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
 if not cap.isOpened():
-    print("Gagal buka stream. Kalau m3u8 tidak stabil di OpenCV, coba file mp4 lokal dulu.")
+    print("Gagal buka stream:", url)
+    print("Cek apakah URL masih hidup (buka di VLC / curl -I), atau pakai file lokal:")
+    print("  VIDEO_SOURCE=../dataset/malam.mp4 python main.py")
     raise SystemExit
 
 # overlay
@@ -92,13 +103,13 @@ total = {"top": 0}
 def main():
     while True:
         ret, frame = cap.read()
-        # h, w = frame.shape[:2]
-        # print("Frame size:", w, "x", h)
-        frame = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_AREA)
-        
+        # cek ret dulu: saat stream putus frame = None dan cv2.resize akan crash
         if not ret:
             print("Frame tidak terbaca.")
             break
+        # h, w = frame.shape[:2]
+        # print("Frame size:", w, "x", h)
+        frame = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_AREA)
         # Track (deteksi + ByteTrack)
         r = model.track(
             frame,
@@ -151,6 +162,7 @@ def main():
                                 vehicle_type,          
                                 1,               
                             )
+                    reporter.record_coco(c)
 
 
                 prev_inside["top"][tid] = in_top
@@ -213,4 +225,7 @@ def main():
         #     break
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        reporter.stop()  # kirim sisa data sebelum keluar
