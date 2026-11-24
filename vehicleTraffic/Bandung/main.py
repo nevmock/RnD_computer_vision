@@ -9,7 +9,7 @@ import sys
 
 # Integrasi Core API SoloMove (aktif jika env SOLOMOVE_CORE_URL & SOLOMOVE_API_KEY diisi)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from solomove import TrafficReporter, COCO_CLASSES_FILTER, coco_to_vehicle_type
+from solomove import TrafficReporter, COCO_CLASSES_FILTER, coco_to_vehicle_type, ContraflowDetector
 
 reporter = TrafficReporter.from_env(cctv_code="DEV-PAHLAWAN").start()
 
@@ -63,6 +63,7 @@ ZONE_TOP = np.array([
 # =========================
 import json as _json, os as _os
 _ZONES_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "zones.json")
+_z = {}
 if _os.path.exists(_ZONES_FILE):
     with open(_ZONES_FILE, encoding="utf-8") as _f:
         _z = _json.load(_f)
@@ -74,13 +75,18 @@ if _os.path.exists(_ZONES_FILE):
         ZONE_RIGHT = np.array(_z["right"], dtype=np.int32)
     print("Zona dimuat dari", _ZONES_FILE)
 
-
-direction_history = {}
-MOVEMENT_THRESHOLD = 5
-MIN_FRAMES = 6
-
-zone_entry_position = {}
-MIN_DISPLACEMENT = 25   # pixel minimum agar dianggap benar-benar bergerak
+# =========================
+# LAWAN ARAH (solomove/contraflow.py)
+# Tiap lajur punya arah seharusnya. Default: LEFT = naik, RIGHT = turun.
+# Arah miring diatur di customzone.py (tombol D) → disimpan sebagai left_direction / right_direction.
+# Ambang (jarak minimum, sudut, jumlah frame) bisa di-override lewat key "contraflow" di zones.json.
+# =========================
+_lane_cfg = {"left": ZONE_LEFT.tolist(), "right": ZONE_RIGHT.tolist()}
+_lane_cfg.update({k: _z[k] for k in ("left_direction", "right_direction", "lanes", "contraflow") if k in _z})
+contraflow = ContraflowDetector.from_zones(_lane_cfg)
+LANE_COLORS = {"left": (255, 0, 0), "right": (0, 255, 0)}
+for _lane in contraflow.lanes:
+    print(f"Lajur {_lane.name}: arah seharusnya ({_lane.direction[0]:+.2f}, {_lane.direction[1]:+.2f})")
 
 def inside_poly(cx, cy, poly):
     # True jika titik di dalam / tepi polygon
@@ -129,6 +135,18 @@ def draw_transparent_polygon(img, poly, color=(0, 255, 255), alpha=0.25):
     cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
 
 
+def draw_lane(img, lane, color):
+    """Gambar zona lajur + panah arah seharusnya (untuk cek visual)."""
+    poly = np.array(lane.polygon, dtype=np.int32)
+    draw_transparent_polygon(img, poly, color=color, alpha=0.08)
+    cv2.polylines(img, [poly], True, color, 2)
+    cx, cy = lane.centroid()
+    dx, dy = lane.direction
+    tail = (int(cx - dx * 40), int(cy - dy * 40))
+    head = (int(cx + dx * 40), int(cy + dy * 40))
+    cv2.arrowedLine(img, tail, head, color, 3, tipLength=0.35)
+
+
 # =========================
 # COUNTING STATE
 # =========================
@@ -140,15 +158,8 @@ counted = {
 }
 total = {"top": 0}
 
-# =========================
-# CONTRA FLOW STATE
-# =========================
-prev_position = {}
-contra_ids = set()
-contra_total = 0
-
 def main():
-    global contra_total
+    frame_idx = 0
 
     def mouse_callback(event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -166,6 +177,9 @@ def main():
 
         frame = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_AREA)
         clean_frame = frame.copy()  # untuk foto bukti pelanggaran (tanpa overlay)
+        frame_idx += 1
+        if frame_idx % 30 == 0:
+            contraflow.prune(frame_idx)  # buang state kendaraan yang sudah lama hilang
 
         # h, w = frame.shape[:2]
         h, w = frame.shape[:2]
@@ -201,11 +215,8 @@ def main():
         )[0]
 
         # draw_transparent_polygon(frame, ZONE_TOP, color=(0, 0, 255), alpha=0.20)
-        draw_transparent_polygon(frame, ZONE_LEFT, color=(255, 0, 0), alpha=0.08)
-        draw_transparent_polygon(frame, ZONE_RIGHT, color=(0, 255, 0), alpha=0.08)
-        #
-        cv2.polylines(frame, [ZONE_LEFT], True, (255,0,0), 2)
-        cv2.polylines(frame, [ZONE_RIGHT], True, (0,255,0), 2)
+        for lane in contraflow.lanes:
+            draw_lane(frame, lane, LANE_COLORS.get(lane.name, (0, 165, 255)))
 
         # Draw polygon zones
         # cv2.polylines(frame, [ZONE_TOP], True, (0,255,255), 2)
@@ -229,66 +240,25 @@ def main():
                 cx = (x1 + x2) // 2
                 cy = y2
 
-                prev_cy = prev_position.get(tid)
-
-                in_left = inside_poly(cx, cy, ZONE_LEFT)
-                in_right = inside_poly(cx, cy, ZONE_RIGHT)
-
-                current_zone = None
-                if in_left:
-                    current_zone = "left"
-                elif in_right:
-                    current_zone = "right"
-
                 # =========================
-                # Saat pertama kali masuk zona
+                # LAWAN ARAH: bandingkan arah gerak dengan arah lajur
+                # (jarak tempuh >= min, sudut >= 135°, bertahan beberapa frame)
                 # =========================
-                if current_zone and tid not in zone_entry_position:
-                    zone_entry_position[tid] = cy
-
-                # =========================
-                # Jika sudah punya entry point
-                # =========================
-                if current_zone and tid in zone_entry_position:
-
-                    entry_cy = zone_entry_position[tid]
-                    displacement = cy - entry_cy
-
-                    wrong_direction = False
-
-                    # JALUR KIRI → harus naik (cy makin kecil)
-                    if current_zone == "left":
-                        if displacement > MIN_DISPLACEMENT:
-                            wrong_direction = True
-
-                    # JALUR KANAN → harus turun (cy makin besar)
-                    elif current_zone == "right":
-                        if displacement < -MIN_DISPLACEMENT:
-                            wrong_direction = True
-
-                    if wrong_direction and tid not in contra_ids:
-                        contra_ids.add(tid)
-                        contra_total += 1
-
-                        # Bukti pelanggaran → Core SoloMove (dikirim di thread latar belakang)
-                        vtype = coco_to_vehicle_type(c)
-                        if vtype:
-                            evidence = clean_frame.copy()
-                            cv2.rectangle(evidence, (x1, y1), (x2, y2), (0, 0, 255), 3)
-                            ok, jpg = cv2.imencode(".jpg", evidence, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                            if ok:
-                                lane = "kiri" if current_zone == "left" else "kanan"
-                                reporter.report_violation(
-                                    vtype, jpg.tobytes(),
-                                    description=f"Melaju berlawanan arah di jalur {lane}",
-                                    confidence=float(cf),
-                                )
-
-                # reset kalau keluar zona
-                if not current_zone and tid in zone_entry_position:
-                    del zone_entry_position[tid]
-
-                prev_position[tid] = cy
+                event = contraflow.update(tid, (cx, cy), frame_idx)
+                if event:
+                    print(f"[CONTRA] id={tid} lajur={event.lane.name} jarak={event.distance_px}px sudut={event.angle_deg}°")
+                    # Bukti pelanggaran → Core SoloMove (dikirim di thread latar belakang)
+                    vtype = coco_to_vehicle_type(c)
+                    if vtype:
+                        evidence = clean_frame.copy()
+                        cv2.rectangle(evidence, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                        ok, jpg = cv2.imencode(".jpg", evidence, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        if ok:
+                            reporter.report_violation(
+                                vtype, jpg.tobytes(),
+                                description=event.description,
+                                confidence=float(cf),
+                            )
 
                 # ====== cek inside
                 in_top = inside_poly(cx, cy, ZONE_TOP)
@@ -314,7 +284,7 @@ def main():
 
                 # Draw bbox
                 # box_color = (0, 255, 0)
-                if tid in contra_ids:
+                if contraflow.is_flagged(tid):
                     box_color = (0, 0, 255)
                 else:
                     box_color = (0, 255, 0)
@@ -367,7 +337,7 @@ def main():
         # teks putih
         cv2.putText(frame, text, (x, y), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
-        contra_text = f"CONTRA: {contra_total}"
+        contra_text = f"CONTRA: {contraflow.total}"
         pos2 = (30, 170)
 
         (tw2, th2), baseline2 = cv2.getTextSize(contra_text, font, font_scale, thickness)
